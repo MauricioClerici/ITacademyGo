@@ -18,7 +18,7 @@ func Controller(context *gin.Context) {
 	var wg sync.WaitGroup
 	c := make(chan *categories.Category)
 	s := make(chan *sites.Sites)
-	e := make(chan *apierrors.ApiError)
+	e := make(chan *apierrors.ApiError, 2)
 	userID := context.Param("id")
 	id, err := strconv.ParseInt(userID, 10, 64)
 	if err != nil {
@@ -34,12 +34,21 @@ func Controller(context *gin.Context) {
 		context.JSON(apiErr.Status, apiErr)
 		return
 	}
-	go category_service.GetCategory(user.SiteID, c, e, &wg)
-	go site_service.GetSite(user.SiteID, s, e, &wg)
-
+	wg.Add(2)
+	go func() {
+		category, err := category_service.GetCategory(user.SiteID)
+		c <- category
+		e <- err
+		wg.Done()
+	}()
+	go func() {
+		site, err := site_service.GetSite(user.SiteID)
+		s <- site
+		e <- err
+		wg.Done()
+	}()
 	wg.Wait()
-	response := &myml.Myml{Categories:*<-c, Site:*<-s}
+	response := &myml.Myml{Categories: *<-c, Site: *<-s}
 
 	context.JSON(http.StatusOK, response)
 }
-
